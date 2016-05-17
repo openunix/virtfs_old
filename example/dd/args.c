@@ -38,10 +38,12 @@ static char sccsid[] = "@(#)args.c	8.3 (Berkeley) 4/2/94";
 #endif /* not lint */
 #include <sys/cdefs.h>
 
-#ifdef __FBSDID
+#ifdef __FREEBSD__
 __FBSDID("$FreeBSD$");
 #else
 # define OFF_MAX ~0ULL
+# define strtoq(x, y, z) strtoll(x, y, z)
+# define strtouq(x, y, z) strtoull(x, y, z)
 #endif
 
 #include <sys/types.h>

@@ -1,4 +1,5 @@
 AC_INIT([virtfs], [0.1], [steve.shuo.feng@gmail.com])
+
 AC_PREREQ([2.59d])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
@@ -14,14 +15,22 @@ AC_SYS_LARGEFILE
 AC_PROG_MKDIR_P
 AM_PROG_CC_C_O
 
+case $target_os in
+     *linux*)	arch=linux;;
+     *freebsd*) arch=freebsd;;
+     *)	        arch=unknown;;
+esac
+
 AC_ARG_ENABLE(example,
 	[  --enable-example        Compile with examples ])
 
 if test "$enable_example" != "no"; then
 	OPTION_DIRS="$OPTION_DIRS example/dd";
 fi
-
 AC_SUBST([OPTION_DIRS])
+
+AM_CONDITIONAL(LINUX, test "$arch" = linux)
+AM_CONDITIONAL(FREEBSD, test "$arch" = freebsd)
 
 AC_CONFIG_FILES([Makefile example/dd/Makefile])
 

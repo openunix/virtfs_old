@@ -43,18 +43,18 @@ static char sccsid[] = "@(#)dd.c	8.5 (Berkeley) 4/2/94";
 #endif /* not lint */
 #endif
 
-#ifdef __FBSDID
-#include <sys/cdefs.h>
+#include <virtfs.h>
+
+#ifdef __FREEBSD__
 __FBSDID("$FreeBSD$");
 #else
-# include <virtfs.h>
 # define OFF_MAX ~0ULL
 #endif
 
 
 #include <sys/param.h>
 #include <sys/stat.h>
-#ifdef __FBSDID
+#ifdef __FREEBSD__
 #include <sys/conf.h>
 #include <sys/disklabel.h>
 #include <sys/filio.h>
