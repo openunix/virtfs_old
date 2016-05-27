@@ -95,16 +95,15 @@ uintmax_t cpy_cnt;		/* # of blocks to copy */
 static off_t	pending = 0;	/* pending seek if sparse */
 u_int	ddflags = 0;		/* conversion options */
 size_t	cbsz;			/* conversion block size */
-uintmax_t files_cnt = 1;	/* # of files to copy */
 const	u_char *ctab;		/* conversion table */
 char	fill_char;		/* Character to fill with if defined */
 volatile sig_atomic_t need_summary;
 
 int
-main(int argc __unused, char *argv[])
+main(int argc, char *argv[])
 {
 	(void)setlocale(LC_CTYPE, "");
-	jcl(argv);
+	jcl(argc, argv);
 	setup();
 
 	(void)signal(SIGINFO, siginfo_handler);
@@ -112,17 +111,11 @@ main(int argc __unused, char *argv[])
 
 	atexit(summary);
 
-	while (files_cnt--)
-		dd_in();
+        dd_in();
 
 	dd_close();
-	/*
-	 * Some devices such as cfi(4) may perform significant amounts
-	 * of work when a write descriptor is closed.  Close the out
-	 * descriptor explicitly so that the summary handler (called
-	 * from an atexit() hook) includes this work.
-	 */
-	close(out.fd);
+
+	virtfs_clean();
 	exit(0);
 }
 
@@ -141,39 +134,37 @@ setup(void)
 {
 	u_int cnt;
 	struct timeval tv;
+        int ret;
 
 	if (in.name == NULL) {
 		in.name = "stdin";
-		in.fd = STDIN_FILENO;
+		in.fd = virtfs_fd_from_posix(STDIN_FILENO);
 	} else {
-		in.fd = open(in.name, O_RDONLY, 0);
-		if (in.fd == -1)
+		in.fd = virtfs_openuri(in.name, O_RDONLY);
+		if (in.fd == NULL)
 			err(1, "%s", in.name);
 	}
 
 	getfdtype(&in);
 
-	if (files_cnt > 1 && !(in.flags & ISTAPE))
-		errx(1, "files is not supported for non-tape devices");
-
 	if (out.name == NULL) {
 		/* No way to check for read access here. */
-		out.fd = STDOUT_FILENO;
+		out.fd = virtfs_fd_from_posix(STDOUT_FILENO);
 		out.name = "stdout";
 	} else {
 #define	OFLAGS \
     (O_CREAT | (ddflags & (C_SEEK | C_NOTRUNC) ? 0 : O_TRUNC))
-		out.fd = open(out.name, O_RDWR | OFLAGS, DEFFILEMODE);
+		out.fd = virtfs_openuri(out.name, O_RDWR | OFLAGS, DEFFILEMODE);
 		/*
 		 * May not have read access, so try again with write only.
 		 * Without read we may have a problem if output also does
 		 * not support seeks.
 		 */
-		if (out.fd == -1) {
-			out.fd = open(out.name, O_WRONLY | OFLAGS, DEFFILEMODE);
+		if (out.fd == NULL) {
+			out.fd = virtfs_openuri(out.name, O_WRONLY | OFLAGS, DEFFILEMODE);
 			out.flags |= NOREAD;
 		}
-		if (out.fd == -1)
+		if (out.fd == NULL)
 			err(1, "%s", out.name);
 	}
 
@@ -194,18 +185,24 @@ setup(void)
 	out.dbp = out.db;
 
 	/* Position the input/output streams. */
-	if (in.offset)
-		pos_in();
-	if (out.offset)
-		pos_out();
+	if (in.offset){
+                if (virtfs_lseek(in.fd, in.offset * in.dbsz, SEEK_CUR) == -1 &&
+                    errno != 0)
+                        err(1, "%s", in.name);
+        }
+
+	if (out.offset){
+                if (virtfs_lseek(out.fd, out.offset * out.dbsz, SEEK_CUR) == -1 &&
+                    errno != 0)
+                        err(1, "%s", out.name);
+        }
 
 	/*
 	 * Truncate the output file.  If it fails on a type of output file
 	 * that it should _not_ fail on, error out.
 	 */
-	if ((ddflags & (C_OF | C_SEEK | C_NOTRUNC)) == (C_OF | C_SEEK) &&
-	    out.flags & ISTRUNC)
-		if (ftruncate(out.fd, out.offset * out.dbsz) == -1)
+	if ((ddflags & (C_OF | C_SEEK | C_NOTRUNC)) == (C_OF | C_SEEK))
+		if (virtfs_ftruncate(out.fd, out.offset * out.dbsz) == -1)
 			err(1, "truncating %s", out.name);
 
 	if (ddflags & (C_LCASE  | C_UCASE | C_ASCII | C_EBCDIC | C_PARITY)) {
@@ -267,30 +264,10 @@ getfdtype(IO *io)
 	struct stat sb;
 	int type;
 
-	if (fstat(io->fd, &sb) == -1)
+	if (virtfs_fstat(io->fd, &sb) == -1)
 		err(1, "%s", io->name);
-	if (S_ISREG(sb.st_mode))
-		io->flags |= ISTRUNC;
-#ifdef FIODTYPE
-	if (S_ISCHR(sb.st_mode) || S_ISBLK(sb.st_mode)) { 
-		if (ioctl(io->fd, FIODTYPE, &type) == -1) {
-			err(1, "%s", io->name);
-		} else {
-			if (type & D_TAPE)
-				io->flags |= ISTAPE;
-			else if (type & (D_DISK | D_MEM))
-				io->flags |= ISSEEK;
-			if (S_ISCHR(sb.st_mode) && (type & D_TAPE) == 0)
-				io->flags |= ISCHR;
-		}
-		return;
-	}
-#endif
-	errno = 0;
-	if (lseek(io->fd, (off_t)0, SEEK_CUR) == -1 && errno == ESPIPE)
-		io->flags |= ISPIPE;
-	else
-		io->flags |= ISSEEK;
+	if (!S_ISREG(sb.st_mode))
+                err(1, "%s is not a regualr file", io->name);
 }
 
 static void
@@ -323,7 +300,7 @@ dd_in(void)
 				memset(in.dbp, 0, in.dbsz);
 		}
 
-		n = read(in.fd, in.dbp, in.dbsz);
+		n = virtfs_read(in.fd, in.dbp, in.dbsz);
 		if (n == 0) {
 			in.dbrcnt = 0;
 			return;
@@ -346,8 +323,7 @@ dd_in(void)
 			 * raw disks this section should be modified to re-read
 			 * in sector size chunks.
 			 */
-			if (in.flags & ISSEEK &&
-			    lseek(in.fd, (off_t)in.dbsz, SEEK_CUR))
+			if (virtfs_lseek(in.fd, (off_t)in.dbsz, SEEK_CUR))
 				warn("%s", in.name);
 
 			/* If sync not specified, omit block and continue. */
@@ -471,16 +447,16 @@ dd_out(int force)
 				if (pending != 0) {
 					if (force)
 						pending--;
-					if (lseek(out.fd, pending, SEEK_CUR) ==
+					if (virtfs_lseek(out.fd, pending, SEEK_CUR) ==
 					    -1)
 						err(2, "%s: seek error creating sparse file",
 						    out.name);
 					if (force)
-						write(out.fd, outp, 1);
+						virtfs_write(out.fd, outp, 1);
 					pending = 0;
 				}
 				if (cnt)
-					nw = write(out.fd, outp, cnt);
+					nw = virtfs_write(out.fd, outp, cnt);
 				else
 					return;
 			}
@@ -504,14 +480,6 @@ dd_out(int force)
 			++st.out_part;
 			if ((size_t)nw == cnt)
 				break;
-			if (out.flags & ISTAPE)
-				errx(1, "%s: short write on tape device",
-				    out.name);
-			if (out.flags & ISCHR && !warned) {
-				warned = 1;
-				warnx("%s: short write on character device",
-				    out.name);
-			}
 		}
 		if ((out.dbcnt -= n) < out.dbsz)
 			break;

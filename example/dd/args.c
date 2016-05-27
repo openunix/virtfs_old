@@ -65,7 +65,6 @@ static void	f_bs(char *);
 static void	f_cbs(char *);
 static void	f_conv(char *);
 static void	f_count(char *);
-static void	f_files(char *);
 static void	f_fillchar(char *);
 static void	f_ibs(char *);
 static void	f_if(char *);
@@ -85,7 +84,6 @@ static const struct arg {
 	{ "cbs",	f_cbs,		C_CBS,	 C_CBS },
 	{ "conv",	f_conv,		0,	 0 },
 	{ "count",	f_count,	C_COUNT, C_COUNT },
-	{ "files",	f_files,	C_FILES, C_FILES },
 	{ "fillchar",	f_fillchar,	C_FILL,	 C_FILL },
 	{ "ibs",	f_ibs,		C_IBS,	 C_BS|C_IBS },
 	{ "if",		f_if,		C_IF,	 C_IF },
@@ -103,10 +101,14 @@ static char *oper;
  * args -- parse JCL syntax of dd.
  */
 void
-jcl(char **argv)
+jcl(int argc, char **argv)
 {
 	struct arg *ap, tmp;
 	char *arg;
+        char **virtfs_argv;
+        int ret, virtfs_argc = 0;
+
+        virtfs_argv = malloc(sizeof(char *) * (argc + 1));
 
 	in.dbsz = out.dbsz = 512;
 
@@ -121,14 +123,18 @@ jcl(char **argv)
 		tmp.name = oper;
 		if (!(ap = (struct arg *)bsearch(&tmp, args,
 		    sizeof(args)/sizeof(struct arg), sizeof(struct arg),
-		    c_arg)))
-			errx(1, "unknown operand %s", tmp.name);
+		    c_arg))){
+                        virtfs_argv[virtfs_argc] = oper;
+                        virtfs_argc++;
+                        continue;
+                }
 		if (ddflags & ap->noset)
 			errx(1, "%s: illegal argument combination or already set",
 			    tmp.name);
 		ddflags |= ap->set;
 		ap->f(arg);
 	}
+        virtfs_argv[virtfs_argc] = NULL;
 
 	/* Final sanity checks. */
 
@@ -178,6 +184,10 @@ jcl(char **argv)
 	    out.offset > OFF_MAX / (ssize_t)out.dbsz)
 		errx(1, "seek offsets cannot be larger than %jd",
 		    (intmax_t)OFF_MAX);
+
+        ret = virtfs_setup(virtfs_argc, virtfs_argv);
+        if (ret != 0)
+                errx(1, "failed to setup virtfs, return %d", ret);
 }
 
 static int
@@ -222,15 +232,6 @@ f_count(char *arg)
 		cpy_cnt = (uintmax_t)-1;
 	else
 		cpy_cnt = (uintmax_t)res;
-}
-
-static void
-f_files(char *arg)
-{
-
-	files_cnt = get_num(arg);
-	if (files_cnt < 1)
-		errx(1, "files must be between 1 and %jd", (uintmax_t)-1);
 }
 
 static void

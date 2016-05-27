@@ -39,7 +39,7 @@ void block_close(void);
 void dd_out(int);
 void def(void);
 void def_close(void);
-void jcl(char **);
+void jcl(int, char **);
 void pos_in(void);
 void pos_out(void);
 void summary(void);

@@ -8,4 +8,6 @@ if LINUX
 AM_CPPFLAGS = -D__LINUX__
 endif
 
-dd_virtfs_SOURCES = args.c conv.c conv_tab.c dd.c misc.c position.c
+LDADD = ../../lib/libvirtfs.la
+
+dd_virtfs_SOURCES = args.c conv.c conv_tab.c dd.c misc.c

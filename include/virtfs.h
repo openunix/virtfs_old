@@ -23,6 +23,9 @@
 #define _GNU_SOURCE
 #endif
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 700
 #endif
@@ -39,6 +42,22 @@
 #endif
 
 __BEGIN_DECLS
+
+int virtfs_setup(int argc, char *argv[]) __THROW;
+void virtfs_clean() __THROW;
+
+typedef void *virtfs_fd_t;
+#define vfd_t virtfs_fd_t
+
+vfd_t virtfs_openuri(const char *uri, int flags, ...) __THROW;
+int virtfs_close(vfd_t vfd) __THROW;
+int virtfs_fd_to_posix(vfd_t vfd) __THROW;
+vfd_t virtfs_fd_from_posix(int fd) __THROW;
+int virtfs_ftruncate(vfd_t vfd, off_t length) __THROW;
+int virtfs_fstat(vfd_t vfd, struct stat *buf) __THROW;
+int virtfs_read(vfd_t vfd, void *buf, size_t count) __THROW;
+int virtfs_write(vfd_t vfd, const void *buf, size_t count) __THROW;
+int virtfs_lseek(vfd_t vfd, off_t offset, int whence) __THROW;
 
 __END_DECLS
 

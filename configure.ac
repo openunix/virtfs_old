@@ -9,6 +9,7 @@ AC_CONFIG_HEADERS(include/config.h)
 
 AC_GNU_SOURCE
 
+AM_PROG_AR
 AC_PROG_LIBTOOL
 AC_PROG_CC_STDC
 AC_SYS_LARGEFILE
@@ -32,6 +33,6 @@ AC_SUBST([OPTION_DIRS])
 AM_CONDITIONAL(LINUX, test "$arch" = linux)
 AM_CONDITIONAL(FREEBSD, test "$arch" = freebsd)
 
-AC_CONFIG_FILES([Makefile example/dd/Makefile])
+AC_CONFIG_FILES([Makefile include/Makefile lib/Makefile example/dd/Makefile])
 
 AC_OUTPUT
